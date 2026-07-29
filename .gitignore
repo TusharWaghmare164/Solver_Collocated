@@ -1,0 +1,35 @@
+# test
+
+test.py
+
+# results files
+.csv
+
+# Python cache
+
+__pycache__/
+*.py[cod]
+
+# VS Code
+
+.vscode/
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# Virtual environments
+
+venv/
+.env/
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# Solver output
+
+Results/
+Plots/
+Output/
