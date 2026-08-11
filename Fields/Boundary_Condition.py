@@ -84,9 +84,9 @@ class BoundaryCondition:
 
     #  format of boundary condition
 
-    def _make_boundary_format(self) -> ScalarBoundaryMap:
+    def _make_boundary_format(self) -> BoundaryMap:
 
-        BC: ScalarBoundaryMap = {
+        BC: BoundaryMap = {
             E.Valid_Sides.LEFT: None,
             E.Valid_Sides.RIGHT: None,
             E.Valid_Sides.TOP: None,

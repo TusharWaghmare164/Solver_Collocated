@@ -1,161 +1,261 @@
-# This file is to make structured mesh
+"""
+Structured Cartesian Mesh.
 
+Provides:
+        - cell center coordinates
+        - face coordinates
+        - face neighbour cell index
+        - Volume of cell
+        - face area list
+
+"""
+
+# library
 import numpy as np
 from collections.abc import Sequence
 
+# modules
 from Settings import enums as E
+
+
+# ========================== Class StructuredMesh ==========================
 
 class StructuredMesh:
 
+    """
+    StructuredMesh
+
+    inputs:
+        - partitions : which stores the number of cells in each direction, e.g. [Nx, Ny, ...]
+        - ranges : which stores the range of each direction, e.g. [(x0, x1), (y0, y1), ...]
+
+    outputs:
+        - cell center (cells) and face coordinates (faces)
+        - face neighbour cells list
+        - Volume of cell
+        - face area list
+        - dimension of mesh
+    """
+
     def __init__(
             self,
-            xrange : tuple[float, float],
-            Nx : int,
-            yrange : tuple[float, float],
-            Ny : int):
+            partitions : Sequence[int] | None = None,
+            ranges : Sequence[tuple[float, float]] | None = None,
+            ) -> None:
 
-        self.x0, self.x1 = xrange
-        self.y0, self.y1 = yrange
-        self.Nx = Nx              # no of cells in x direction
-        self.Ny = Ny              # no of cells in y direction
+        partitions, ranges = self._set_var(partitions, ranges)
 
-        self.total_cell = self.Nx * self.Ny
-        self.total_face_x = (self.Nx + 1) * self.Ny
-        self.total_face_y = self.Nx * (self.Ny + 1)
-        self.total_points = (self.Nx + 1) * (self.Ny + 1)
+        assert partitions is not None and ranges is not None, "partitions and ranges must be provided."
 
-        self.dx = (self.x1 - self.x0)/self.Nx
-        self.dy = (self.y1 - self.y0)/self.Ny
+        self._set_counts(partitions)
 
-        self.Ax = 1 * self.dy
-        self.Ay = 1 * self.dx
+        self._set_properties(ranges, partitions)
 
-        self.Volume = self.dx * self.dy * 1
+        self._set_coords(ranges, partitions)
+
+        self._cell_faces()
+
+        self._neighbour_cells()
 
 
-        # making the coordinates for the cell center
-        self.cells = self.built(
-            [self.x0 + (self.dx/2), self.x1-(self.dx/2)],
-            self.Nx,
-            [self.y0 + (self.dy/2), self.y1-(self.dy/2)],
-            self.Ny)
+    # ========================== Set Variables ==========================
+
+    def _set_var(self, partitions, ranges) -> tuple[Sequence[int], Sequence[tuple[float, float]]]:
+
+        if partitions is None and ranges is None:
+            partitions = (10, 10)
+            ranges = [(0, 1), (0, 1)]
+
+        elif partitions is None:
+            partitions = (10,) * len(ranges)    # pyright: ignore
+
+        elif ranges is None:
+            ranges = [(0, 1)] * len(partitions)
+
+        if len(partitions) != len(ranges):      # pyright: ignore
+            raise ValueError(
+                "partitions and ranges must have the same number of dimensions."
+            )
+
+        if len(partitions) > 3 or len(ranges) > 3:      # pyright: ignore
+            raise ValueError(
+                "StructuredMesh only supports up to 3 dimensions."
+            )
+
+        return partitions, ranges
 
 
-        self.faces_x = self.built(
-            xrange,
-            self.Nx + 1,
-            [self.y0 + (self.dy/2), self.y1-(self.dy/2)],
-            self.Ny)
+    # ========================== Set Counts, Properties and Coordinates ==========================
+
+    def _set_counts(self, partitions):
+        self.partitions = np.array(partitions, dtype=int)
+
+        self.dim = len(partitions)
+        self.total_cell = np.prod(self.partitions)
+
+        self.total_faces = [
+            np.prod([
+                p + 1 if i == j else p
+                for j, p in enumerate(self.partitions)
+            ])
+            for i in range(self.dim)
+        ]
 
 
-        self.faces_y = self.built(
-            [self.x0 + (self.dx/2), self.x1-(self.dx/2)],
-            self.Nx,
-            yrange,
-            self.Ny + 1)
+    # ========================== Set Properties ==========================
 
-        # making the neighbours for the cells
-        self.cell_neigh = np.full((self.total_cell,4), -1, dtype = np.int32)
+    def _set_properties(self, ranges, partitions):
 
-        # this specific array will store all face's index for each cell in E,W,N,S order for vector
-        self.cell_faces = np.full((self.total_cell,4), -1, dtype = np.int32)
+         self.distances = [
+             (r[1] - r[0]) / p
+             for r, p in zip(ranges, partitions)
+         ]
 
-        # this specific array will store all vertical face's neightbours in cellE, cellW for face neighbour relations
-        self.x_face_neigh = np.full((self.total_face_x,2), -1, dtype = np.int32)
+         self.cell_volume = np.full(self.total_cell, np.prod(self.distances))
 
-        # this specific array will store all horizontal face's neightbours in cellN, cellS for face neighbour relations
-        self.y_face_neigh = np.full((self.total_face_y,2), -1, dtype = np.int32)
-
-        self.boundary_cells : dict[str,list[int]] = {
-            E.Valid_Sides.LEFT:   [],
-            E.Valid_Sides.RIGHT:  [],
-            E.Valid_Sides.TOP:    [],
-            E.Valid_Sides.BOTTOM: []
-        }
-
-        self.boundary_faces : dict[str,list[int]] = {
-            E.Valid_Sides.LEFT:   [],
-            E.Valid_Sides.RIGHT:  [],
-            E.Valid_Sides.TOP:    [],
-            E.Valid_Sides.BOTTOM: []
-        }
-
-        self.neigh()
+         self.face_area = [
+             np.full(
+                 self.total_faces[i],
+                 np.prod([d for j, d in enumerate(self.distances) if j != i]) if self.dim > 1 else 1.0,
+             )
+             for i in range(self.dim)
+         ]
 
 
+    # ========================== Set Coordinates ==========================
 
-    #  assigning the coordinates
+    def _set_coords(self, ranges, partitions):
+        # for cells (cell center coordinates) it'll start from offset of half distance and end at offset of half distance from the end
+
+            self.cells = self.built_coords(
+                tuple(
+                    (r[0] + d / 2, r[1] - d / 2)
+                    for r, d in zip(ranges, self.distances)
+                ),
+                partitions,
+            )
+
+            # in such way bulding face coordintes
+            # if faces[0] then it'll be in partition[0] + 1 and only ranges[0] will be as it is but other ranges will be offset by half distance and end at offset of half distance from the end
+
+            self.faces = self.built_coords(
+                (
+                    [
+                        (r[0], r[1]) if i == j
+                        else (r[0] + d/2, r[1] - d/2)
+                        for j, (r, d) in enumerate(zip(ranges, self.distances)) #pyright: ignore
+                    ]
+                    for i in range(self.dim)
+                ),
+                (
+                    [
+                        (p + 1) if i == j else p
+                        for j, p in enumerate(partitions)   #pyright: ignore
+                    ]
+                    for i in range(self.dim)
+                )
+            )
+
 
     @staticmethod
-    def built(
-        xlim : Sequence[float],
-        Nx : int,
-        ylim : Sequence[float],
-        Ny : int):
+    def built_coords(ranges, partitions):
+        axes = [
+            np.linspace(r[0], r[1], p)
+            for r, p in zip(ranges, partitions)
+        ]
 
-        x = np.linspace(xlim[0], xlim[1], Nx)
-        y = np.linspace(ylim[0], ylim[1], Ny)
-
-        X,Y = np.meshgrid(x,y)
-
-        nodes = np.column_stack((X.ravel(),Y.ravel()))
-
-        return nodes
+        grids = np.meshgrid(*axes, indexing="ij")
+        return np.stack(grids, axis=-1).reshape(-1, len(axes))
 
 
+    # ========================== Set Cell Faces ==========================
 
-    #  neighbouring data all forms
+    def _cell_faces(self):
+        """
+        For every cell, return the indices of its faces.
 
-    def neigh(self):
+        1D : [W, E]
+        2D : [W, E, S, N]
+        3D : [W, E, S, N, B, F]
+        """
 
-        for idx in range(self.total_cell):
+        p = np.array(self.partitions)
+        cell_shape = tuple(p)
 
-            i = idx % self.Nx       # index on x
-            j = idx // self.Nx      # index on y
+        # coordinates of every cell
+        cell_coords = np.array(
+            np.unravel_index(np.arange(self.total_cell), cell_shape)
+        ).T                                    # (ncell, dim)
 
-            west = (self.Nx + 1) * j + i
-            east = west + 1
+        faces = []
 
-            south = (self.Nx) * j + i
-            north = south + self.Nx
+        for axis in range(self.dim):
 
-            self.cell_faces[idx,:] = [east, west, north, south]
+            face_shape = p.copy()
+            face_shape[axis] += 1
 
-            # first east
+            # minus face (W/S/B)
+            minus = np.ravel_multi_index(
+                cell_coords.T,
+                tuple(face_shape)
+            )
 
-            if i < self.Nx - 1:
-                self.cell_neigh[idx,0] = idx + 1
-                self.x_face_neigh[east,1] = idx
-            else:
-                self.boundary_cells[E.Valid_Sides.RIGHT].append(idx)
-                self.boundary_faces[E.Valid_Sides.RIGHT].append(east)
+            # plus face (E/N/F)
+            plus_coords = cell_coords.copy()
+            plus_coords[:, axis] += 1
 
-            # second west
+            plus = np.ravel_multi_index(
+                plus_coords.T,
+                tuple(face_shape)
+            )
 
-            if i > 0:
-                self.cell_neigh[idx,1] = idx - 1
-                self.x_face_neigh[west,0] = idx
-            else:
-                self.boundary_cells[E.Valid_Sides.LEFT].append(idx)
-                self.boundary_faces[E.Valid_Sides.LEFT].append(west)
+            faces.extend([plus, minus])
 
-            #  third north
-
-            if j < self.Ny - 1:
-                self.cell_neigh[idx,2] = idx + self.Nx
-                self.y_face_neigh[north,2] = idx
-            else:
-                self.boundary_cells[E.Valid_Sides.TOP].append(idx)
-                self.boundary_faces[E.Valid_Sides.TOP].append(north)
-
-            # fourth south
-
-            if j > 0:
-                self.cell_neigh[idx,3] = idx - self.Nx
-                self.y_face_neigh[south,3] = idx
-            else:
-                self.boundary_cells[E.Valid_Sides.BOTTOM].append(idx)
-                self.boundary_faces[E.Valid_Sides.BOTTOM].append(south)
+        self.cell_faces = np.column_stack(faces)
 
 
-        return
+    # ========================== Set Neighbour Cells ==========================
+
+    def _neighbour_cells(self):
+        p = np.array(self.partitions)
+        cell_shape = tuple(p)
+
+        self.face_neighbour_cells = []
+
+        for axis in range(self.dim):
+
+            face_shape = p.copy()
+            face_shape[axis] += 1
+            face_shape = tuple(face_shape)
+
+            nfaces = np.prod(face_shape)
+
+            coords = np.array(
+                np.unravel_index(np.arange(nfaces), face_shape)
+            ).T
+
+            plus = np.full(nfaces, -1, dtype=int)
+            minus = np.full(nfaces, -1, dtype=int)
+
+            mask = coords[:, axis] < p[axis]
+
+            if np.any(mask):
+                plus[mask] = np.ravel_multi_index(
+                    coords[mask].T,
+                    cell_shape
+                )
+
+            c = coords.copy()
+            c[:, axis] -= 1
+
+            mask = c[:, axis] >= 0
+
+            if np.any(mask):
+                minus[mask] = np.ravel_multi_index(
+                    c[mask].T,
+                    cell_shape
+                )
+
+            self.face_neighbour_cells.append(
+                np.column_stack((plus, minus))
+            )
