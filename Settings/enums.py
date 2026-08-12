@@ -7,7 +7,6 @@ class FieldType(StrEnum):
 
 class BoundaryType(StrEnum):
     FIXED_VALUE = "fixedValue"
-    ZERO_GRADIENT = "zeroGradient"
     GRADIENT = "Gradient"
 
 class Valid_Sides(StrEnum):
@@ -15,13 +14,10 @@ class Valid_Sides(StrEnum):
     RIGHT = "right"
     TOP = "top"
     BOTTOM = "bottom"
+    FRONT = "front"
+    BACK = "back"
 
-class Valid_Vector_Dir(StrEnum):
+class Valid_Dir(StrEnum):
     X = "x"
     Y = "y"
-
-class Valid_Tensor_Dir(StrEnum):
-    XX = "xx"
-    XY = "xy"
-    YX = "yx"
-    YY = "yy"
+    Z = "z"

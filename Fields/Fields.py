@@ -11,8 +11,6 @@ from Mesh.structuredMesh import StructuredMesh
 from Settings import enums as E
 from Utilities.math_utis import safe_div
 
-from Fields.Boundary_Condition import BoundaryCondition
-
 class Field:
 
     def __init__(
@@ -37,7 +35,6 @@ class Field:
         self._values = np.full((self.total_component, self.mesh.total_cell), initial_value, dtype=float)
 
         self.type_assign()
-        self.Boundary_Condition = BoundaryCondition(self.field_type)    # pyright: ignore
 
         self.components_map = {}
 
