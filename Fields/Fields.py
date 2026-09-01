@@ -10,6 +10,7 @@ from typing import Self
 from Mesh.structuredMesh import StructuredMesh
 from Settings import enums as E
 from Utilities.math_utis import safe_div
+from Utilities.components import make_component_labels
 
 class Field:
 
@@ -37,6 +38,9 @@ class Field:
         self.type_assign()
 
         self.components_map = {}
+
+        from Fields.Boundary_Condition import BoundaryCondition as BC
+        self.Boundary_Condition : BC
 
 
     def type_assign(self) -> None:
@@ -251,3 +255,136 @@ class Field:
             and self.mesh is other.mesh
             and np.array_equal(self._values, other._values)
         )
+
+
+    # to face: interpolate the field value to face values
+
+    def to_face(self) -> list[np.ndarray]:
+
+        from Fields.Boundary_Condition import BCEntry
+
+        def boundary_value(
+            BC: BCEntry,
+            internal_value: float,
+            opposite: bool,
+            distance: float
+        ) -> float:
+
+            if BC.bc_type == E.BoundaryType.FIXED_VALUE:
+                return BC.bc_value
+
+            elif BC.bc_type == E.BoundaryType.GRADIENT:
+
+                if opposite:
+                    return internal_value - BC.bc_value * distance
+                else:
+                    return internal_value + BC.bc_value * distance
+
+            raise ValueError(
+                f"Unsupported boundary condition type: {BC.bc_type}"
+            )
+
+        Sides = {
+            0: [E.Valid_Sides.RIGHT, E.Valid_Sides.LEFT],
+            1: [E.Valid_Sides.TOP, E.Valid_Sides.BOTTOM],
+            2: [E.Valid_Sides.FRONT, E.Valid_Sides.BACK]
+        }
+
+        mesh = self.mesh
+
+        components = (
+            ["scalar"]
+            if self.field_order == 0
+            else make_component_labels(
+                self.dim,
+                self.field_order
+            )
+        )
+
+        face_values = []
+
+        for component in range(self.total_component):
+
+            component_faces = []
+
+            for axe in range(mesh.dim):
+
+                total_faces = mesh.total_faces[axe]
+
+                face_value = np.zeros(total_faces)
+
+                for idx in range(total_faces):
+
+                    neighbours = mesh.face_neighbour_cells[axe][idx]
+
+                    # ---------------- Interior ----------------
+
+                    if -1 not in neighbours:
+
+                        c0 = neighbours[0]
+                        c1 = neighbours[1]
+
+                        face_value[idx] = 0.5 * (
+                            self[component, c0]
+                            +
+                            self[component, c1]
+                        )
+
+                    # ---------------- Boundary ----------------
+
+                    else:
+
+                        boundary_index = np.where(
+                            neighbours == -1
+                        )[0][0]
+
+                        internal_cell = neighbours[
+                            1 - boundary_index
+                        ]
+
+                        side = Sides[axe][boundary_index]
+
+                        # Get correct BC
+                        if self.field_order == 0:
+
+                            bc = getattr(
+                                self.Boundary_Condition,
+                                side
+                            )
+
+                        else:
+
+                            component_name = components[component]
+
+                            component_bc = getattr(
+                                self.Boundary_Condition,
+                                component_name
+                            )
+
+                            bc = getattr(
+                                component_bc,
+                                side
+                            )
+
+                        face_value[idx] = boundary_value(
+                            BC=bc,
+                            internal_value=self[
+                                component,
+                                internal_cell
+                            ], #pyright: ignore
+                            opposite=(boundary_index == 1),
+                            distance=mesh.distances[axe][0] / 2
+                        )
+
+                component_faces.append(face_value)
+
+            face_values.append(component_faces)
+
+        return face_values
+
+
+def to_cell(self) -> nd.array:
+
+    # This function will take changed face values and interpolate them back to the cell values.
+    # Main use of function will be in case of MAC Grid eg. SIMPLE and PISO method.
+

@@ -1,6 +1,6 @@
 import numpy as np
 
-from Fields.Base_field import BaseField
+from Fields.Fields import Field
 
 def apply(func, *fields):
 

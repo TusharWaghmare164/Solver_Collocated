@@ -6,25 +6,14 @@ Here will be three functions, one for each type of field (scalar, vector, tensor
 also with dictionery of component naming for each type of field's each layer of Matrix (2nd axis (not row oe column) of the matrix)
 """
 
-from itertools import product
-
 from Fields.Fields import Field
 from Mesh.structuredMesh import StructuredMesh
-
+from Utilities.components import make_component_labels
 
 # ------------------- Components Assigning -------------------
 
 
 # making iterable names to appoint to each components of Field's values
-
-def make_component_labels(dim, order) -> list[str]:
-
-    dirs = ["x", "y", "z"][:dim]
-
-    return [
-        "".join(p)
-        for p in product(dirs, repeat=order)
-    ]
 
 
 # now by use of setattr we'll assign each layer of Field a name if order != 0
