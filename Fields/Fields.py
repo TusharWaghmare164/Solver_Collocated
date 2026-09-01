@@ -5,6 +5,7 @@ Assumption : nth order tensor field where n > 2 is not needed
 '''
 
 import numpy as np
+import numpy.typing as npt
 from typing import Self
 
 from Mesh.structuredMesh import StructuredMesh
@@ -383,8 +384,27 @@ class Field:
         return face_values
 
 
-def to_cell(self) -> nd.array:
+def to_cell(self, face_data : None | list[np.ndarray]= None) -> npt.ndarray:
 
     # This function will take changed face values and interpolate them back to the cell values.
     # Main use of function will be in case of MAC Grid eg. SIMPLE and PISO method.
 
+    if face_data is None:
+        face_data = self.to_face()
+
+    assert face_data is not None, "face_data must be provided."
+
+    mesh = self.mesh
+
+    for cell in range(mesh.total_cell):
+
+        for component in range(self.total_component):
+
+            neighbour = mesh.cell_faces[cell]
+            cell_value = 0.0
+
+            for i in range(mesh.dim):
+
+                cell_value += face_data[component][i][neighbour[2*i]] + face_data[component][i][neighbour[(2*i)+1]]
+
+            self[component][cell] = cell_value/ 2 * self.dim
