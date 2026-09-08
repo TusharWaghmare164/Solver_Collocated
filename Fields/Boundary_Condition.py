@@ -107,24 +107,46 @@ class BoundaryCondition:
             }
 
 
-    def __getattr__(self, name):
+    def __getitem__(self, key):
 
         if self.order == 0:
-            return getattr(self.__data__, name)
 
-        if name in self.__data__:
-            return self.__data__[name]  #pyright: ignore
+            side = key
 
-        raise AttributeError(name)
+            return getattr(
+                self.__data__,
+                side.value
+            )
+
+        component, side = key
+
+        return getattr(
+            self.__data__[component],   # pyright: ignore
+            side.value
+        )
 
 
-    def __setattr__(self, name: str, value: BCEntry | None) -> None:
+    def __setitem__(self, key, value):
 
-        if (self.order == 0) and (name in E.Valid_Sides):
-            setattr(self.__data__, name, value)
+        if self.order == 0:
+
+            side = key
+
+            setattr(
+                self.__data__,
+                side.value,
+                value
+            )
+
             return
 
-        object.__setattr__(self, name, value)
+        component, side = key
+
+        setattr(
+            self.__data__[component],   # pyright: ignore
+            side.value,
+            value
+        )
 
 
     def copy(self):

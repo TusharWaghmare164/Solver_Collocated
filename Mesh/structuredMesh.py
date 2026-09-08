@@ -138,23 +138,27 @@ class StructuredMesh:
             # in such way bulding face coordintes
             # if faces[0] then it'll be in partition[0] + 1 and only ranges[0] will be as it is but other ranges will be offset by half distance and end at offset of half distance from the end
 
-            self.faces = self.built_coords(
-                (
-                    [
-                        (r[0], r[1]) if i == j
-                        else (r[0] + d/2, r[1] - d/2)
-                        for j, (r, d) in enumerate(zip(ranges, self.distances)) #pyright: ignore
-                    ]
-                    for i in range(self.dim)
-                ),
-                (
-                    [
-                        (p + 1) if i == j else p
-                        for j, p in enumerate(partitions)   #pyright: ignore
-                    ]
-                    for i in range(self.dim)
-                )
-            )
+            face_ranges = [
+                [
+                    (r[0], r[1]) if i == j
+                    else (r[0] + d / 2, r[1] - d / 2)
+                    for j, (r, d) in enumerate(zip(ranges, self.distances))
+                ]
+                for i in range(self.dim)
+            ]
+
+            face_partitions = [
+                [
+                    (p + 1) if i == j else p
+                    for j, p in enumerate(partitions)
+                ]
+                for i in range(self.dim)
+            ]
+
+            self.faces = [
+                self.built_coords(r, p)
+                for r, p in zip(face_ranges, face_partitions)
+            ]
 
 
     @staticmethod
@@ -209,7 +213,7 @@ class StructuredMesh:
                 tuple(face_shape)
             )
 
-            faces.extend([plus, minus])
+            faces.extend([minus, plus])
 
         self.cell_faces = np.column_stack(faces)
 
@@ -257,5 +261,5 @@ class StructuredMesh:
                 )
 
             self.face_neighbour_cells.append(
-                np.column_stack((plus, minus))
+                np.column_stack((minus, plus))
             )

@@ -20,8 +20,8 @@ class Field:
             mesh: StructuredMesh,
             order: int,
             initial_value: float,
-            name: str | None,
-            unit: str | None
+            name: str | None = None,
+            unit: str | None = None
             ) -> None:
 
         self.name = name
@@ -42,6 +42,7 @@ class Field:
 
         from Fields.Boundary_Condition import BoundaryCondition as BC
         self.Boundary_Condition : BC
+        self._face_value = None
 
 
     def type_assign(self) -> None:
@@ -58,18 +59,26 @@ class Field:
 
     # copying
 
-    def copy(self, val_copy: bool = True) -> Self:
+    def copy(self, val_copy=True):
 
-        result = type(self)(
-            mesh = self.mesh,
-            order = self.field_order,
-            initial_value = 0.0,
-            name = self.name,
-            unit = self.unit
+        result = self.__class__(
+            self.mesh,
+            self.field_order,
+            0.0,
+            name=self.name,
+            unit=self.unit
         )
 
         if val_copy:
             result._values = self._values.copy()
+
+        if self._face_value is not None:
+            result._face_value = self._face_value.copy()
+        else:
+            result._face_value = None
+
+        if hasattr(self, "Boundary_Condition"):
+            result.Boundary_Condition = self.Boundary_Condition.copy()
 
         return result
 
@@ -109,6 +118,7 @@ class Field:
 
             result = self.copy(val_copy=False)
             result._values = self._values + other._values
+
             return result
 
         else:
@@ -137,6 +147,7 @@ class Field:
 
             result = self.copy(val_copy=False)
             result._values = self._values - other._values
+
             return result
 
         else:
@@ -149,6 +160,7 @@ class Field:
 
             result = self.copy(val_copy=False)
             result._values = other._values - self._values
+
             return result
 
         else:
@@ -170,11 +182,37 @@ class Field:
 
     def __mul__(self, other):
 
-        if self.check(other):
+        if isinstance(other, Field):
 
-            result = self.copy(val_copy=False)
-            result._values = self._values * other._values
-            return result
+            if self.dim != other.dim:
+                raise ValueError(
+                    "Multiplication requires Fields with the same dimension."
+                )
+
+            # At least one scalar field
+            if self.field_order == 0 or other.field_order == 0:
+
+                result_order = max(
+                    self.field_order,
+                    other.field_order
+                )
+
+                result = Field(
+                    mesh=self.mesh,
+                    order=result_order,
+                    initial_value=0.0,
+                    name=f"({self.name}*{other.name})",
+                    unit=None
+                )
+
+                result._values = (
+                    self._values * other._values
+                )
+
+                return result
+
+            # Both non-scalar -> tensor contraction
+            return self.dot(other)
 
         elif isinstance(other, (int, float)):
 
@@ -182,8 +220,7 @@ class Field:
             result._values = self._values * other
             return result
 
-        else:
-            raise ValueError("Multiplication is only supported between Field instances of the same type and size.")
+        return NotImplemented
 
 
     __rmul__ = __mul__
@@ -257,6 +294,95 @@ class Field:
             and np.array_equal(self._values, other._values)
         )
 
+
+    # Transpose
+    @property
+    def T(self):
+
+        result = self.copy()
+        result._values = self._values.T
+
+        return result
+
+
+    def __matmul__(self, other : Self):
+
+        result = self._values @ other._values
+
+        return result
+
+
+    def norm(self):
+
+        return np.linalg.norm(self._values)
+
+
+    def dot(self, other: Self):
+
+        if not isinstance(other, Field):
+            raise TypeError(
+                "Dot product is only supported between Field instances."
+            )
+
+        if self.dim != other.dim:
+            raise ValueError(
+                "Dot product requires Fields with the same spatial dimension."
+            )
+
+        if self.field_order == 0 or other.field_order == 0:
+            raise ValueError(
+                "Dot product requires both Fields to have non-zero order."
+            )
+
+        result_order = self.field_order + other.field_order - 2
+
+        result = Field(
+            mesh=self.mesh,
+            order=result_order,
+            initial_value=0.0,
+            name=f"({self.name}·{other.name})",
+            unit=None
+        )
+
+        a = self._values.reshape(
+            (self.dim,) * self.field_order + (self.mesh.total_cell,)
+        )
+
+        b = other._values.reshape(
+            (self.dim,) * other.field_order + (self.mesh.total_cell,)
+        )
+
+        result_array = np.einsum(
+            a,
+            list(range(self.field_order)) + [self.field_order],
+            b,
+            [self.field_order - 1]
+            + list(range(self.field_order, self.field_order + other.field_order - 1))
+            + [self.field_order],
+            list(range(self.field_order - 1))
+            + list(range(self.field_order, self.field_order + other.field_order - 1))
+            + [self.field_order]
+        )
+
+        result._values = result_array.reshape(
+            result.total_component,
+            self.mesh.total_cell
+        )
+
+        return result
+
+
+    def inner(self, other: Self) -> float:
+        if not isinstance(other, Field):
+            raise TypeError("inner() requires another Field.")
+
+        if self.mesh is not other.mesh:
+            raise ValueError("Fields must belong to the same mesh.")
+
+        if self.field_order != other.field_order:
+            raise ValueError("Fields must have the same order.")
+
+        return float(np.sum(self._values * other._values))
 
     # to face: interpolate the field value to face values
 
@@ -348,24 +474,16 @@ class Field:
                         # Get correct BC
                         if self.field_order == 0:
 
-                            bc = getattr(
-                                self.Boundary_Condition,
-                                side
-                            )
+                            bc = self.Boundary_Condition[side]
 
                         else:
 
                             component_name = components[component]
 
-                            component_bc = getattr(
-                                self.Boundary_Condition,
-                                component_name
-                            )
-
-                            bc = getattr(
-                                component_bc,
-                                side
-                            )
+                            bc = self.Boundary_Condition[
+                                    component_name,
+                                    side
+                                ]
 
                         face_value[idx] = boundary_value(
                             BC=bc,
@@ -374,37 +492,39 @@ class Field:
                                 internal_cell
                             ], #pyright: ignore
                             opposite=(boundary_index == 1),
-                            distance=mesh.distances[axe][0] / 2
+                            distance=mesh.distances[axe] / 2
                         )
 
                 component_faces.append(face_value)
 
             face_values.append(component_faces)
 
+        self._face_value = face_values
+
         return face_values
 
 
-def to_cell(self, face_data : None | list[np.ndarray]= None) -> npt.ndarray:
+    def to_cell(self, face_data : None | list[np.ndarray]= None):
 
-    # This function will take changed face values and interpolate them back to the cell values.
-    # Main use of function will be in case of MAC Grid eg. SIMPLE and PISO method.
+        # This function will take changed face values and interpolate them back to the cell values.
+        # Main use of function will be in case of MAC Grid eg. SIMPLE and PISO method.
 
-    if face_data is None:
-        face_data = self.to_face()
+        if face_data is None:
+            face_data = self.to_face()
 
-    assert face_data is not None, "face_data must be provided."
+        assert face_data is not None, "face_data must be provided."
 
-    mesh = self.mesh
+        mesh = self.mesh
 
-    for cell in range(mesh.total_cell):
+        for cell in range(mesh.total_cell):
 
-        for component in range(self.total_component):
+            for component in range(self.total_component):
 
-            neighbour = mesh.cell_faces[cell]
-            cell_value = 0.0
+                neighbour = mesh.cell_faces[cell]
+                cell_value = 0.0
 
-            for i in range(mesh.dim):
+                for i in range(mesh.dim):
 
-                cell_value += face_data[component][i][neighbour[2*i]] + face_data[component][i][neighbour[(2*i)+1]]
+                    cell_value += face_data[component][i][neighbour[2*i]] + face_data[component][i][neighbour[(2*i)+1]]
 
-            self[component][cell] = cell_value/ 2 * self.dim
+                self[component][cell] = cell_value/ (2 * self.dim)
