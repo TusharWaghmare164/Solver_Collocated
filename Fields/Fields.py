@@ -212,7 +212,7 @@ class Field:
                 return result
 
             # Both non-scalar -> tensor contraction
-            return self.dot(other)
+            return self.dot(other)    # pyright: ignore
 
         elif isinstance(other, (int, float)):
 

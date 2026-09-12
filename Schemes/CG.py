@@ -1,11 +1,3 @@
-"""
-Conjugate Gradient Solver.
-
-Provides:
-        - matrix-free Conjugate Gradient iteration
-        - Field-based solution and residual handling
-        - relative residual convergence criterion
-"""
 
 from typing import Callable
 
@@ -13,8 +5,6 @@ import numpy as np
 
 from Fields.Fields import Field
 
-
-# ========================== Conjugate Gradient ==========================
 
 def CG(
     A: Callable,
@@ -24,7 +14,9 @@ def CG(
     max_iter: int = 100
 ) -> Field:
     """
-    Solve the linear system
+    Conjugate Gradient solver.
+
+    Solves
 
         A(x) = B
 
@@ -33,76 +25,78 @@ def CG(
     Parameters
     ----------
     A : Callable
-        Linear operator representing A.
-
-        The operator must accept a Field and return a Field:
-
-            A(x) -> Field
+        Linear operator.
 
     x0 : Field
         Initial guess for the solution.
 
     B0 : Field
-        Right-hand side of the linear system.
+        Right-hand side.
 
     tol : float, optional
         Relative residual tolerance.
 
     max_iter : int, optional
-        Maximum number of CG iterations.
+        Maximum number of iterations.
 
     Returns
     -------
     Field
-        Approximate solution of A(x) = B.
-
-    Notes
-    -----
-    The Conjugate Gradient method requires A to be symmetric
-    positive definite with respect to the inner product used
-    by the solver.
-
-    The inner products are evaluated over all Field components
-    and all cells.
+        Approximate solution.
     """
 
-    x = x0
+    # --------------------------------------------------------------
+    # Initial values
+    # --------------------------------------------------------------
+
+    x = x0.copy()
     B = B0
 
-    # Initial residual:
-    #
-    # r_0 = B - A(x_0)
-    #
+    # Initial residual
     r: Field = B - A(x)
 
-    # Initial search direction:
-    #
-    # p_0 = r_0
-    #
+    # First search direction
     p: Field = r.copy()
 
-    # Initial residual norm:
-    #
-    # ||r_0||
-    #
-    r0 = np.linalg.norm(r._values)
+    # Initial residual norm
+    rr = r.inner(r)
 
-    if r0 == 0.0:
+    if rr == 0.0:
         return x
 
-    rtol = 1.0
+    r0 = np.sqrt(rr)
 
-    for _ in range(max_iter):
+    # --------------------------------------------------------------
+    # CG iteration
+    # --------------------------------------------------------------
 
-        # A p_k
-        Ap = A(p)
+    for i in range(max_iter):
 
-        # alpha_k =
-        #       (r_k, r_k)
-        # -----------------
-        #       (p_k, A p_k)
+        print(f"\nIteration {i}")
+
+        # ----------------------------------------------------------
+        # Apply the homogeneous part of A to the search direction.
         #
-        rr = r.inner(r)
+        # A may contain fixed-value boundary contributions.
+        # Therefore:
+        #
+        #     A_h(p) = A(p) - A(0)
+        #
+        # where A(0) is the boundary contribution.
+        # ----------------------------------------------------------
+
+        zero = p.copy(val_copy=False)
+        zero._values[:] = 0.0
+
+        if hasattr(p, "Boundary_Condition"):
+            zero.Boundary_Condition = p.Boundary_Condition.copy()
+
+        Ap: Field = A(p) - A(zero)
+
+        # ----------------------------------------------------------
+        # alpha
+        # ----------------------------------------------------------
+
         pAp = p.inner(Ap)
 
         if pAp == 0.0:
@@ -112,32 +106,51 @@ def CG(
 
         alpha = rr / pAp
 
-        # x_{k+1} = x_k + alpha_k p_k
+        print(f"  alpha = {alpha}")
+
+        # ----------------------------------------------------------
+        # Update solution
+        # ----------------------------------------------------------
+
         x = x + alpha * p
 
-        # r_{k+1} = r_k - alpha_k A p_k
+        # ----------------------------------------------------------
+        # Update residual
+        # ----------------------------------------------------------
+
         r_old = r
+
         r = r - alpha * Ap
 
-        # Relative residual:
-        #
-        # ||r_{k+1}||
-        # -----------
-        #   ||r_0||
-        #
-        rtol = np.linalg.norm(r._values) / r0
+        # ----------------------------------------------------------
+        # Check convergence
+        # ----------------------------------------------------------
+
+        rr_new = r.inner(r)
+
+        rtol = np.sqrt(rr_new) / r0
+
+        print(f"  residual = {rtol}")
 
         if rtol <= tol:
+            print("  Converged!")
             break
 
-        # beta_k =
-        #       (r_{k+1}, r_{k+1})
-        # ---------------------
-        #       (r_k, r_k)
-        #
-        beta = r.inner(r) / r_old.inner(r_old)
+        # ----------------------------------------------------------
+        # beta
+        # ----------------------------------------------------------
 
-        # p_{k+1} = r_{k+1} + beta_k p_k
+        beta = rr_new / rr
+
+        print(f"  beta = {beta}")
+
+        # ----------------------------------------------------------
+        # New search direction
+        # ----------------------------------------------------------
+
         p = r + beta * p
+
+        # Store new residual norm
+        rr = rr_new
 
     return x

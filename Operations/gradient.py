@@ -160,7 +160,7 @@ def grad(field: Field, face_values: None|Sequence = None, to_face:bool = False):
                                 component,
                                 internal_cell
                             ], #pyright: ignore
-                            opposite=(boundary_index == 1),
+                            opposite=(boundary_index == 0),
                             distance=mesh.distances[axe] / 2
                         )
 

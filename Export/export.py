@@ -282,7 +282,7 @@ def export(
     # Project root = directory containing this export.py file.
     project_root = Path(__file__).resolve().parent
 
-    result_dir = project_root / "result"
+    result_dir = project_root.parent / "result"
 
     # Keep the supplied filename/path structure, but put it
     # underneath result/.

@@ -43,15 +43,15 @@ class StructuredMesh:
             ranges : Sequence[tuple[float, float]] | None = None,
             ) -> None:
 
-        partitions, ranges = self._set_var(partitions, ranges)
+        self.partitions, self.ranges = self._set_var(partitions, ranges)
 
-        assert partitions is not None and ranges is not None, "partitions and ranges must be provided."
+        assert self.partitions is not None and self.ranges is not None, "partitions and ranges must be provided."
 
-        self._set_counts(partitions)
+        self._set_counts(self.partitions)
 
-        self._set_properties(ranges, partitions)
+        self._set_properties(self.ranges, self.partitions)
 
-        self._set_coords(ranges, partitions)
+        self._set_coords(self.ranges, self.partitions)
 
         self._cell_faces()
 

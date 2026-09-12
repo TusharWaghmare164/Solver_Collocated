@@ -1,28 +1,90 @@
+import numpy as np
+
 from Mesh.structuredMesh import StructuredMesh
-from Fields.Field_maker import *
+from Fields.Field_maker import Scalar, Vector
 
 from Fields.Boundary_Condition import BoundaryCondition
 import Fields.Boundary_Condition as BC
 import Settings.enums as E
 
-from Operations.divergence import div
 from Operations.gradient import grad
+from Operations.divergence import div
 from Operations.laplacian import lap
 
-dim = 1
-mesh = StructuredMesh([5],[(0.,1.)])
+from Solver.dt import implicite
 
-ALPHA = 0.1
 
-Temp = Scalar(mesh,100, name= "Temp", unit="J")
+def main():
 
-BCond = BoundaryCondition(Temp)
+    # ============================================================
+    # Problem
+    # ============================================================
 
-BCond[E.Valid_Sides.LEFT] = BC.fixedValue(100)
-BCond[E.Valid_Sides.RIGHT] = BC.fixedValue(300)
+    length = 1.0
+    partition = [100,100,100]
 
-Temp.Boundary_Condition = BCond
+    ALPHA = 0.02
 
-equation = lambda x: ALPHA * lap(Temp)
+    t_final = 0.1
 
-t = 10
+    # ============================================================
+    # Mesh
+    # ============================================================
+
+    mesh = StructuredMesh(
+        partition,
+        [(0.0, length),(0.0, length),(0.0, length)]
+    )
+
+    # ============================================================
+    # Temperature
+    # ============================================================
+
+    T = Scalar(
+        mesh,
+        0.0,
+        name="Temperature",
+        unit="degC"
+    )
+
+    U = Vector(
+        mesh,
+        0,
+        "velocity",
+        "m/s"
+    )
+
+    U[0][:] = 0.1
+    U[1][:] = 0.05
+    U[1][:] = 0.02
+
+    # ============================================================
+    # Boundary conditions
+    # ============================================================
+
+    bc = BoundaryCondition(T)
+
+    bc[E.Valid_Sides.LEFT] = BC.Gradient(0)
+    bc[E.Valid_Sides.RIGHT] = BC.fixedValue(100)
+    bc[E.Valid_Sides.TOP] = BC.Gradient(0)
+    bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(200)
+    bc[E.Valid_Sides.TOP] = BC.Gradient(0)
+    bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(300)
+
+    T.Boundary_Condition = bc
+
+    def equation(x):
+        return (ALPHA * lap(x)) - (U * grad(x))
+
+    # Solving the Equation
+
+    implicite(
+        equation,
+        T,
+        1,
+        time_steps=0.1
+    )
+
+
+if __name__ == "__main__":
+    main()
