@@ -1,86 +1,35 @@
-
 from typing import Callable
-
 import numpy as np
 
 from Fields.Fields import Field
-
+from Schemes.Richardson import Richardson
 
 def BiCGSTAB(
     A: Callable,
     x0: Field,
     B0: Field,
     tol: float = 1e-4,
-    max_iter: int = 100
+    max_iter: int = 100,
+    richardson_iterations: int = 5
 ) -> Field:
-    """
-    BiCGSTAB solver.
 
-    Solves
-
-        A(x) = B
-
-    using the Bi-Conjugate Gradient Stabilized method.
-
-    Parameters
-    ----------
-    A : Callable
-        Linear operator.
-
-    x0 : Field
-        Initial guess.
-
-    B0 : Field
-        Right-hand side.
-
-    tol : float, optional
-        Relative residual tolerance.
-
-    max_iter : int, optional
-        Maximum number of iterations.
-
-    Returns
-    -------
-    Field
-        Approximate solution.
-    """
-
-    # --------------------------------------------------------------
     # Initial solution and RHS
-    # --------------------------------------------------------------
-
     x = x0.copy()
     B = B0
 
-    # --------------------------------------------------------------
-    # Initial residual
-    #
-    # r = B - A(x)
-    # --------------------------------------------------------------
-
+    # Calculate initial residual
     r: Field = B - A(x)
 
-    # Choose the initial shadow residual.
-    #
-    # BiCGSTAB requires a fixed vector r_hat such that
-    #
-    #     r_hat^T r != 0
-    #
+    # Set shadow residual
     r_hat: Field = r.copy()
 
-    # --------------------------------------------------------------
-    # Initial residual norm
-    # --------------------------------------------------------------
-
+    # Calculate initial residual norm
     r0_norm = np.sqrt(r.inner(r))
 
     if r0_norm == 0.0:
         return x
 
-    # --------------------------------------------------------------
-    # Initial variables
-    # --------------------------------------------------------------
-
+    # Initialize BiCGSTAB variables
     rho_old = 1.0
     alpha = 1.0
     omega = 1.0
@@ -88,18 +37,11 @@ def BiCGSTAB(
     p = r.copy()
     v = r.copy()
 
-    # --------------------------------------------------------------
-    # BiCGSTAB iteration
-    # --------------------------------------------------------------
-
     for i in range(max_iter):
 
         print(f"\nIteration {i}")
 
-        # ----------------------------------------------------------
-        # rho = r_hat^T r
-        # ----------------------------------------------------------
-
+        # Calculate rho
         rho_new = r_hat.inner(r)
 
         if abs(rho_new) < 1e-30:
@@ -107,13 +49,9 @@ def BiCGSTAB(
                 "BiCGSTAB breakdown: r_hat^T r is zero."
             )
 
-        # ----------------------------------------------------------
-        # First iteration
-        # ----------------------------------------------------------
-
+        # Calculate search direction
         if i == 0:
             p = r.copy()
-
         else:
             beta = (
                 (rho_new / rho_old)
@@ -122,36 +60,28 @@ def BiCGSTAB(
 
             p = r + beta * (p - omega * v)
 
-        # ----------------------------------------------------------
+        # Apply Richardson preconditioner
+        p_hat = Richardson(
+            A,
+            p,
+            max_iter=richardson_iterations
+        )
+
         # Apply operator
-        # ----------------------------------------------------------
+        v = A(p_hat)
 
-        v = A(p)
-
-        # ----------------------------------------------------------
-        # alpha
-        # ----------------------------------------------------------
-
+        # Calculate alpha
         r_hat_v = r_hat.inner(v)
 
         if abs(r_hat_v) < 1e-30:
             raise ValueError(
-                "BiCGSTAB breakdown: r_hat^T A p is zero."
+                "BiCGSTAB breakdown: r_hat^T A(p_hat) is zero."
             )
 
         alpha = rho_new / r_hat_v
 
-        # ----------------------------------------------------------
-        # Intermediate residual
-        #
-        # s = r - alpha*v
-        # ----------------------------------------------------------
-
+        # Calculate intermediate residual
         s = r - alpha * v
-
-        # ----------------------------------------------------------
-        # Check whether s is already small
-        # ----------------------------------------------------------
 
         s_norm = np.sqrt(s.inner(s))
         s_rtol = s_norm / r0_norm
@@ -159,76 +89,57 @@ def BiCGSTAB(
         print(f"  alpha = {alpha}")
         print(f"  intermediate residual = {s_rtol}")
 
+        # Check intermediate convergence
         if s_rtol <= tol:
-
-            x = x + alpha * p
-
+            x = x + alpha * p_hat
             print("  Converged!")
-
             break
 
-        # ----------------------------------------------------------
-        # Apply operator to s
-        # ----------------------------------------------------------
+        # Apply Richardson preconditioner
+        s_hat = Richardson(
+            A,
+            s,
+            max_iter=richardson_iterations
+        )
 
-        t = A(s)
+        # Apply operator
+        t = A(s_hat)
 
-        # ----------------------------------------------------------
-        # omega
-        #
-        # omega = (t^T s) / (t^T t)
-        # ----------------------------------------------------------
-
+        # Calculate BiCGSTAB omega
         tt = t.inner(t)
 
         if abs(tt) < 1e-30:
             raise ValueError(
-                "BiCGSTAB breakdown: A(s)^T A(s) is zero."
+                "BiCGSTAB breakdown: A(s_hat)^T A(s_hat) is zero."
             )
 
         omega = t.inner(s) / tt
 
-        # ----------------------------------------------------------
         # Update solution
-        #
-        # x = x + alpha*p + omega*s
-        # ----------------------------------------------------------
+        x = x + alpha * p_hat + omega * s_hat
 
-        x = x + alpha * p + omega * s
-
-        # ----------------------------------------------------------
         # Update residual
-        #
-        # r = s - omega*t
-        # ----------------------------------------------------------
-
         r = s - omega * t
 
-        # ----------------------------------------------------------
-        # Check convergence
-        # ----------------------------------------------------------
-
+        # Calculate relative residual
         r_norm = np.sqrt(r.inner(r))
         rtol = r_norm / r0_norm
 
         print(f"  omega = {omega}")
         print(f"  residual = {rtol}")
 
+        # Check convergence
         if rtol <= tol:
-
             print("  Converged!")
-
             break
 
+        # Check BiCGSTAB breakdown
         if abs(omega) < 1e-30:
             raise ValueError(
                 "BiCGSTAB breakdown: omega is zero."
             )
 
-        # ----------------------------------------------------------
         # Prepare next iteration
-        # ----------------------------------------------------------
-
         rho_old = rho_new
 
     return x

@@ -21,7 +21,7 @@ def main():
     # ============================================================
 
     length = 1.0
-    partition = [100,100,100]
+    partition = [100,100]
 
     ALPHA = 0.02
 
@@ -33,7 +33,8 @@ def main():
 
     mesh = StructuredMesh(
         partition,
-        [(0.0, length),(0.0, length),(0.0, length)]
+        # [(0.0, length),(0.0, length),(0.0, length)]
+        [(0.0, length),(0.0, length)]
     )
 
     # ============================================================
@@ -56,7 +57,7 @@ def main():
 
     U[0][:] = 0.1
     U[1][:] = 0.05
-    U[1][:] = 0.02
+    # U[1][:] = 0.02
 
     # ============================================================
     # Boundary conditions
@@ -68,8 +69,8 @@ def main():
     bc[E.Valid_Sides.RIGHT] = BC.fixedValue(100)
     bc[E.Valid_Sides.TOP] = BC.Gradient(0)
     bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(200)
-    bc[E.Valid_Sides.TOP] = BC.Gradient(0)
-    bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(300)
+    # bc[E.Valid_Sides.FRONT] = BC.Gradient(0)
+    # bc[E.Valid_Sides.BACK] = BC.fixedValue(300)
 
     T.Boundary_Condition = bc
 
@@ -81,7 +82,7 @@ def main():
     implicite(
         equation,
         T,
-        1,
+        10,
         time_steps=0.1
     )
 

@@ -221,10 +221,17 @@ class StructuredMesh:
     # ========================== Set Neighbour Cells ==========================
 
     def _neighbour_cells(self):
+
         p = np.array(self.partitions)
         cell_shape = tuple(p)
 
         self.face_neighbour_cells = []
+
+        self.inner_faces = []
+        self.inner_cells = []
+
+        self.boundary_faces = []
+        self.boundary_cells = []
 
         for axis in range(self.dim):
 
@@ -235,7 +242,10 @@ class StructuredMesh:
             nfaces = np.prod(face_shape)
 
             coords = np.array(
-                np.unravel_index(np.arange(nfaces), face_shape)
+                np.unravel_index(
+                    np.arange(nfaces),
+                    face_shape
+                )
             ).T
 
             plus = np.full(nfaces, -1, dtype=int)
@@ -260,6 +270,29 @@ class StructuredMesh:
                     cell_shape
                 )
 
-            self.face_neighbour_cells.append(
-                np.column_stack((minus, plus))
+            neighbours = np.column_stack((minus, plus))
+
+            # Store all neighbours as before
+            self.face_neighbour_cells.append(neighbours)
+
+            # Identify interior and boundary faces
+            inner_mask = (minus != -1) & (plus != -1)
+            boundary_mask = ~inner_mask
+
+            # Store interior face information
+            self.inner_faces.append(
+                np.where(inner_mask)[0]
+            )
+
+            self.inner_cells.append(
+                neighbours[inner_mask]
+            )
+
+            # Store boundary face information
+            self.boundary_faces.append(
+                np.where(boundary_mask)[0]
+            )
+
+            self.boundary_cells.append(
+                neighbours[boundary_mask]
             )
