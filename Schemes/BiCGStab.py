@@ -2,15 +2,14 @@ from typing import Callable
 import numpy as np
 
 from Fields.Fields import Field
-from Schemes.Richardson import Richardson
+
 
 def BiCGSTAB(
     A: Callable,
     x0: Field,
     B0: Field,
     tol: float = 1e-4,
-    max_iter: int = 100,
-    richardson_iterations: int = 5
+    max_iter: int = 100
 ) -> Field:
 
     # Initial solution and RHS
@@ -60,22 +59,15 @@ def BiCGSTAB(
 
             p = r + beta * (p - omega * v)
 
-        # Apply Richardson preconditioner
-        p_hat = Richardson(
-            A,
-            p,
-            max_iter=richardson_iterations
-        )
-
         # Apply operator
-        v = A(p_hat)
+        v = A(p)
 
         # Calculate alpha
         r_hat_v = r_hat.inner(v)
 
         if abs(r_hat_v) < 1e-30:
             raise ValueError(
-                "BiCGSTAB breakdown: r_hat^T A(p_hat) is zero."
+                "BiCGSTAB breakdown: r_hat^T A(p) is zero."
             )
 
         alpha = rho_new / r_hat_v
@@ -91,32 +83,25 @@ def BiCGSTAB(
 
         # Check intermediate convergence
         if s_rtol <= tol:
-            x = x + alpha * p_hat
+            x = x + alpha * p
             print("  Converged!")
             break
 
-        # Apply Richardson preconditioner
-        s_hat = Richardson(
-            A,
-            s,
-            max_iter=richardson_iterations
-        )
-
         # Apply operator
-        t = A(s_hat)
+        t = A(s)
 
         # Calculate BiCGSTAB omega
         tt = t.inner(t)
 
         if abs(tt) < 1e-30:
             raise ValueError(
-                "BiCGSTAB breakdown: A(s_hat)^T A(s_hat) is zero."
+                "BiCGSTAB breakdown: A(s)^T A(s) is zero."
             )
 
         omega = t.inner(s) / tt
 
         # Update solution
-        x = x + alpha * p_hat + omega * s_hat
+        x = x + alpha * p + omega * s
 
         # Update residual
         r = s - omega * t

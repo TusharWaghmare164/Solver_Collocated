@@ -8,7 +8,6 @@ from copy import deepcopy
 from typing import Self
 
 from Settings import enums as E
-from Fields.Fields import Field
 
 
 # ------------------- Boundary Condition's data structure -------------------
@@ -65,10 +64,10 @@ def make_component_labels(dim, order) -> list[str]:
 
 class BoundaryCondition:
 
-    def __init__(self, field: Field):
+    def __init__(self, dim: int, order: int):
 
-        self.dim = field.dim
-        self.order = field.field_order
+        self.dim = dim
+        self.order = order
 
         self.__define_components_sides()
 
@@ -126,7 +125,7 @@ class BoundaryCondition:
         )
 
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value:BCEntry):
 
         if self.order == 0:
 
@@ -157,7 +156,7 @@ class BoundaryCondition:
         result.order = self.order
 
         if self.order != 0:
-            result.components = self.components
+            result.components = self.components.copy()
 
         result.__data__ = deepcopy(self.__data__)
 

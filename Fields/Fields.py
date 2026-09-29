@@ -5,13 +5,11 @@ Assumption : nth order tensor field where n > 2 is not needed
 '''
 
 import numpy as np
-import numpy.typing as npt
 from typing import Self
 
 from Mesh.structuredMesh import StructuredMesh
 from Settings import enums as E
 from Utilities.math_utis import safe_div
-from Utilities.components import make_component_labels
 
 class Field:
 
@@ -19,7 +17,7 @@ class Field:
             self,
             mesh: StructuredMesh,
             order: int,
-            initial_value: float,
+            initial_value: float | None = None,
             name: str | None = None,
             unit: str | None = None
             ) -> None:
@@ -30,27 +28,42 @@ class Field:
         self.mesh = mesh
         self.dim = mesh.dim
 
-        self.field_order = order
+        self.order = order
 
         self.total_component = mesh.dim ** order
 
-        self._values = np.full((self.total_component, self.mesh.total_cell), initial_value, dtype=float)
+        self._values = np.full((self.total_component, self.mesh.total_cell), 0 if initial_value is None else initial_value, dtype=float)
 
         self.type_assign()
 
         self.components_map = {}
 
-        from Fields.Boundary_Condition import BoundaryCondition as BC
-        self.Boundary_Condition : BC
+
+        self._Boundary_Condition = None
         self._face_value = None
+
+
+    @property
+    def Boundary_condition(self):
+        return self._Boundary_Condition
+
+
+    from Fields.Boundary_Condition import BoundaryCondition as BC
+
+    @Boundary_condition.setter
+    def Boundary_condition(self, value: BC):
+        self._Boundary_Condition = value
+
+        from Operations import interpolation as I
+        self._face_value = I.to_face(self)
 
 
     def type_assign(self) -> None:
 
-        if self.field_order == 0:
+        if self.order == 0:
             self.field_type = E.FieldType.SCALAR
 
-        elif self.field_order == 1:
+        elif self.order == 1:
             self.field_type = E.FieldType.VECTOR
 
         else:
@@ -63,23 +76,25 @@ class Field:
 
         result = self.__class__(
             self.mesh,
-            self.field_order,
+            self.order,
             0.0,
             name=self.name,
             unit=self.unit
         )
 
+        result._Boundary_Condition = (
+            self._Boundary_Condition.copy()
+            if self._Boundary_Condition is not None
+            else None
+        )
+
         if val_copy:
             result._values = self._values.copy()
-
-        if self._face_value is not None:
-            result._face_value = self._face_value.copy()
-        else:
-            result._face_value = None
-
-        if hasattr(self, "Boundary_Condition"):
-            result.Boundary_Condition = self.Boundary_Condition.copy()
-
+            result._face_value = (
+                self._face_value.copy()
+                if self._face_value is not None
+                else None
+            )
         return result
 
 
@@ -102,7 +117,7 @@ class Field:
     def check(self, other: object) -> bool:
         return (
             isinstance(other, Field)
-            and self.field_order == other.field_order
+            and self.order == other.order
             and self.dim == other.dim
         )
 
@@ -133,6 +148,9 @@ class Field:
         if self.check(other):
 
             self._values += other._values
+
+            from Operations import interpolation as I
+            I.to_face(self)
             return self
 
         else:
@@ -172,6 +190,9 @@ class Field:
         if self.check(other):
 
             self._values -= other._values
+
+            from Operations import interpolation as I
+            I.to_face(self)
             return self
 
         else:
@@ -182,6 +203,7 @@ class Field:
 
     def __mul__(self, other):
 
+        from Operations.mul import mul
         if isinstance(other, Field):
 
             if self.dim != other.dim:
@@ -190,29 +212,9 @@ class Field:
                 )
 
             # At least one scalar field
-            if self.field_order == 0 or other.field_order == 0:
+            result = mul(self, other)
 
-                result_order = max(
-                    self.field_order,
-                    other.field_order
-                )
-
-                result = Field(
-                    mesh=self.mesh,
-                    order=result_order,
-                    initial_value=0.0,
-                    name=f"({self.name}*{other.name})",
-                    unit=None
-                )
-
-                result._values = (
-                    self._values * other._values
-                )
-
-                return result
-
-            # Both non-scalar -> tensor contraction
-            return self.dot(other)    # pyright: ignore
+            return result
 
         elif isinstance(other, (int, float)):
 
@@ -229,6 +231,8 @@ class Field:
     # division
 
     def __truediv__(self, other):
+
+        from Operations.mul import mul
 
         if self.check(other):
 
@@ -268,6 +272,9 @@ class Field:
 
     def __neg__(self):
         result = self.copy(val_copy=False)
+
+        from Operations import interpolation as I
+        I.to_face(self)
         result._values = -self._values
         return result
 
@@ -279,6 +286,10 @@ class Field:
 
     def __setitem__(self, key, value):
         self._values[key] = value
+
+        if self._Boundary_Condition is not None:
+            from Operations import interpolation as I
+            I.to_face(self)
 
     @property
     def shape(self):
@@ -293,6 +304,20 @@ class Field:
             and self.mesh is other.mesh
             and np.array_equal(self._values, other._values)
         )
+
+
+    def assign(self, other: Self):
+        if not self.check(other):
+            raise ValueError("Incompatible fields.")
+
+        self._values = other._values.copy()
+
+        if other._face_value is not None:
+            self._face_value = other._face_value.copy()
+        else:
+            self._face_value = None
+
+        return self
 
 
     # Transpose
@@ -329,12 +354,12 @@ class Field:
                 "Dot product requires Fields with the same spatial dimension."
             )
 
-        if self.field_order == 0 or other.field_order == 0:
+        if self.order == 0 or other.order == 0:
             raise ValueError(
                 "Dot product requires both Fields to have non-zero order."
             )
 
-        result_order = self.field_order + other.field_order - 2
+        result_order = self.order + other.order - 2
 
         result = Field(
             mesh=self.mesh,
@@ -345,23 +370,23 @@ class Field:
         )
 
         a = self._values.reshape(
-            (self.dim,) * self.field_order + (self.mesh.total_cell,)
+            (self.dim,) * self.order + (self.mesh.total_cell,)
         )
 
         b = other._values.reshape(
-            (self.dim,) * other.field_order + (self.mesh.total_cell,)
+            (self.dim,) * other.order + (self.mesh.total_cell,)
         )
 
         result_array = np.einsum(
             a,
-            list(range(self.field_order)) + [self.field_order],
+            list(range(self.order)) + [self.order],
             b,
-            [self.field_order - 1]
-            + list(range(self.field_order, self.field_order + other.field_order - 1))
-            + [self.field_order],
-            list(range(self.field_order - 1))
-            + list(range(self.field_order, self.field_order + other.field_order - 1))
-            + [self.field_order]
+            [self.order - 1]
+            + list(range(self.order, self.order + other.order - 1))
+            + [self.order],
+            list(range(self.order - 1))
+            + list(range(self.order, self.order + other.order - 1))
+            + [self.order]
         )
 
         result._values = result_array.reshape(
@@ -379,151 +404,7 @@ class Field:
         if self.mesh is not other.mesh:
             raise ValueError("Fields must belong to the same mesh.")
 
-        if self.field_order != other.field_order:
+        if self.order != other.order:
             raise ValueError("Fields must have the same order.")
 
         return float(np.sum(self._values * other._values))
-
-    # to face: interpolate the field value to face values
-
-    def to_face(self) -> list[np.ndarray]:
-        """Interpolate cell values to face values."""
-
-        from Fields.Boundary_Condition import BCEntry
-
-        def boundary_value(
-            BC: BCEntry,
-            internal_value: float,
-            opposite: bool,
-            distance: float
-        ) -> float:
-
-            if BC.bc_type == E.BoundaryType.FIXED_VALUE:
-                return BC.bc_value
-
-            elif BC.bc_type == E.BoundaryType.GRADIENT:
-                if opposite:
-                    return internal_value - BC.bc_value * distance
-                else:
-                    return internal_value + BC.bc_value * distance
-
-            raise ValueError(
-                f"Unsupported boundary condition type: {BC.bc_type}"
-            )
-
-        sides = {
-            0: [E.Valid_Sides.RIGHT, E.Valid_Sides.LEFT],
-            1: [E.Valid_Sides.TOP, E.Valid_Sides.BOTTOM],
-            2: [E.Valid_Sides.FRONT, E.Valid_Sides.BACK]
-        }
-
-        mesh = self.mesh
-
-        components = (
-            ["scalar"]
-            if self.field_order == 0
-            else make_component_labels(
-                self.dim,
-                self.field_order
-            )
-        )
-
-        # face_values[component][axis][face]
-        face_values = [
-            [
-                np.zeros(mesh.total_faces[axe], dtype=float)
-                for axe in range(mesh.dim)
-            ]
-            for _ in range(self.total_component)
-        ]
-
-        for axe in range(mesh.dim):
-
-            inner_faces = mesh.inner_faces[axe]
-            inner_cells = mesh.inner_cells[axe]
-
-            # Interior faces are obtained by averaging their two neighbouring cells.
-            if inner_faces.size > 0:
-
-                c0 = inner_cells[:, 0]
-                c1 = inner_cells[:, 1]
-
-                for component in range(self.total_component):
-                    face_values[component][axe][inner_faces] = (
-                        0.5
-                        * (
-                            self._values[component, c0]
-                            + self._values[component, c1]
-                        )
-                    )
-
-            boundary_faces = mesh.boundary_faces[axe]
-            boundary_cells = mesh.boundary_cells[axe]
-
-            # Boundary faces require the boundary condition associated with their side.
-            for idx in range(boundary_faces.size):
-
-                face = boundary_faces[idx]
-                neighbours = boundary_cells[idx]
-
-                boundary_index = np.where(
-                    neighbours == -1
-                )[0][0]
-
-                internal_cell = neighbours[1 - boundary_index]
-
-                side = sides[axe][boundary_index]
-
-                for component in range(self.total_component):
-
-                    if self.field_order == 0:
-                        bc = self.Boundary_Condition[side]
-                    else:
-                        component_name = components[component]
-                        bc = self.Boundary_Condition[
-                            component_name,
-                            side
-                        ]
-
-                    face_values[component][axe][face] = boundary_value(
-                        BC=bc,
-                        internal_value=self._values[
-                            component,
-                            internal_cell
-                        ],
-                        opposite=(boundary_index == 1),
-                        distance=mesh.distances[axe] / 2
-                    )
-
-        self._face_value = face_values
-
-        return face_values
-
-
-    def to_cell(
-        self,
-        face_data: None | list[np.ndarray] = None
-    ):
-        """Interpolate face values back to cell values."""
-
-        if face_data is None:
-            face_data = self.to_face()
-
-        mesh = self.mesh
-
-        cell_values = np.zeros_like(self._values)
-
-        # Each cell receives the average of its two faces along every spatial axis.
-        for axe in range(mesh.dim):
-
-            minus_faces = mesh.cell_faces[:, 2 * axe]
-            plus_faces = mesh.cell_faces[:, 2 * axe + 1]
-
-            for component in range(self.total_component):
-                cell_values[component] += (
-                    face_data[component][axe][minus_faces]
-                    +
-                    face_data[component][axe][plus_faces]
-                )
-
-        self._values = cell_values / (2 * self.dim)

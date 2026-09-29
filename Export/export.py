@@ -59,12 +59,12 @@ def _get_component_labels(field: Field) -> list[str]:
     Return component labels for a Field.
     """
 
-    if field.field_order == 0:
+    if field.order == 0:
         return [""]
 
     return make_component_labels(
         field.dim,
-        field.field_order
+        field.order
     )
 
 
@@ -88,7 +88,7 @@ def _get_field_arrays(field: Field):
 
     for component, label in enumerate(labels):
 
-        if field.field_order == 0:
+        if field.order == 0:
 
             name = field_name
 

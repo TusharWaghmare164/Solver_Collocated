@@ -213,9 +213,9 @@ class StructuredMesh:
                 tuple(face_shape)
             )
 
-            faces.extend([minus, plus])
+            faces.append(np.column_stack((minus, plus)))
 
-        self.cell_faces = np.column_stack(faces)
+        self.cell_faces = np.stack(faces, axis=1)
 
 
     # ========================== Set Neighbour Cells ==========================
@@ -272,12 +272,14 @@ class StructuredMesh:
 
             neighbours = np.column_stack((minus, plus))
 
-            # Store all neighbours as before
+            # Store all neighbours
             self.face_neighbour_cells.append(neighbours)
 
             # Identify interior and boundary faces
             inner_mask = (minus != -1) & (plus != -1)
-            boundary_mask = ~inner_mask
+
+            boundary_mask_minus = (minus == -1)
+            boundary_mask_plus = (plus == -1)
 
             # Store interior face information
             self.inner_faces.append(
@@ -289,10 +291,9 @@ class StructuredMesh:
             )
 
             # Store boundary face information
-            self.boundary_faces.append(
-                np.where(boundary_mask)[0]
-            )
+            boundary_minus = np.where(boundary_mask_minus)[0]
+            boundary_plus = np.where(boundary_mask_plus)[0]
 
-            self.boundary_cells.append(
-                neighbours[boundary_mask]
+            self.boundary_faces.append(
+                (boundary_minus, boundary_plus)
             )

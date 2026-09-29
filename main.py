@@ -7,9 +7,10 @@ from Fields.Boundary_Condition import BoundaryCondition
 import Fields.Boundary_Condition as BC
 import Settings.enums as E
 
-from Operations.gradient import grad
-from Operations.divergence import div
-from Operations.laplacian import lap
+from Operations.grad import grad
+from Operations.div import div
+from Operations.lap import lap
+from Operations.dot import dot
 
 from Solver.dt import implicite
 
@@ -63,19 +64,20 @@ def main():
     # Boundary conditions
     # ============================================================
 
-    bc = BoundaryCondition(T)
+    bc = BoundaryCondition(T.dim, T.order)
 
-    bc[E.Valid_Sides.LEFT] = BC.Gradient(0)
-    bc[E.Valid_Sides.RIGHT] = BC.fixedValue(100)
-    bc[E.Valid_Sides.TOP] = BC.Gradient(0)
-    bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(200)
+    bc[E.Valid_Sides.LEFT] = BC.fixedValue(100)
+    bc[E.Valid_Sides.RIGHT] = BC.fixedValue(0)
+    bc[E.Valid_Sides.TOP] = BC.fixedValue(0)
+    bc[E.Valid_Sides.BOTTOM] = BC.fixedValue(100)
     # bc[E.Valid_Sides.FRONT] = BC.Gradient(0)
     # bc[E.Valid_Sides.BACK] = BC.fixedValue(300)
 
-    T.Boundary_Condition = bc
+    T.Boundary_condition = bc
 
     def equation(x):
-        return (ALPHA * lap(x)) - (U * grad(x))
+        # return (ALPHA * lap(x))
+        return (ALPHA * lap(x)) - dot(U,grad(x))
 
     # Solving the Equation
 

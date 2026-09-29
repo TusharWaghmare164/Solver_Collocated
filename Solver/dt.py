@@ -98,16 +98,17 @@ def implicite(
         # coming from the boundary conditions.
         # ----------------------------------------------------------
 
-        zero = phi.copy(val_copy=False)
+        # zero = phi.copy(val_copy=False)
 
-        zero._values[:] = 0.0
+        # zero._values[:] = 0.0
 
-        if hasattr(phi, "Boundary_Condition"):
-            zero.Boundary_Condition = (
-                phi.Boundary_Condition.copy()
-            )
+        # if phi._Boundary_Condition is not None:
 
-        bc_term = equation(zero)
+        #     zero._Boundary_Condition = (
+        #         phi._Boundary_Condition.copy()
+        #     )
+
+        # bc_term = equation(zero)
 
         # ----------------------------------------------------------
         # Define the homogeneous linear operator.
@@ -128,7 +129,7 @@ def implicite(
                 field
                 - dt * (
                     equation(field)
-                    - bc_term
+                    # - bc_term
                 )
             )
 
@@ -140,7 +141,7 @@ def implicite(
         #     = phi_old + dt * bc_term
         # ----------------------------------------------------------
 
-        B = phi + dt * bc_term
+        B = phi #+ dt * bc_term
 
         # ----------------------------------------------------------
         # Solve the implicit system
